@@ -1,45 +1,29 @@
 
---[[
-    AESTH HUB ELITE
-    Versão: 1.0 - reestruturada
-    LocalScript: StarterPlayer > StarterPlayerScripts
+--==================================================
+-- AESTH HUB ELITE
+-- LocalScript em StarterPlayer > StarterPlayerScripts
+-- Roblox Studio | R6 / R15
+--==================================================
 
-    Recursos:
-    - Interface escura com detalhes vermelhos
-    - Menu minimizável e botão flutuante arrastável
-    - ESP com caixa, nome, distância e linha
-    - Esqueleto visual compatível com R6 e R15
-    - Highlight de personagens
-    - Círculo de FOV visual
-    - Informações de Humanoid e vida
-    - Limpeza de objetos e tratamento de respawn
-    - Sem APIs de executores externos
-]]
-
---// SERVICES
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
+local UIS = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
-local LocalPlayer = Players.LocalPlayer
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local localPlayer = Players.LocalPlayer
+local playerGui = localPlayer:WaitForChild("PlayerGui")
 
---// CONFIGURATION
 local CONFIG = {
     Accent = Color3.fromRGB(255, 40, 65),
-    Background = Color3.fromRGB(15, 15, 19),
-    Panel = Color3.fromRGB(24, 24, 30),
+    Background = Color3.fromRGB(14, 14, 18),
+    Panel = Color3.fromRGB(25, 25, 31),
     Text = Color3.fromRGB(245, 245, 248),
     Muted = Color3.fromRGB(160, 160, 170),
-    Enemy = Color3.fromRGB(255, 55, 75),
-
     MaxDistance = 2000,
     FOVRadius = 120,
-    UpdateInterval = 0.05,
 }
 
-local SETTINGS = {
+local settings = {
     ESP = false,
     Box = true,
     Names = true,
@@ -52,50 +36,35 @@ local SETTINGS = {
     FOV = false,
 }
 
-local alive = true
-local lastUpdate = 0
 local connections = {}
 local overlays = {}
-local highlightFolder
+local alive = true
 
---// SAFE HELPERS
-local function safeDisconnect(connection)
-    if connection then
-        pcall(function()
-            connection:Disconnect()
-        end)
-    end
-end
-
-local function addConnection(connection)
+local function connect(signal, callback)
+    local connection = signal:Connect(callback)
     table.insert(connections, connection)
     return connection
 end
 
-local function make(className, properties, parent)
+local function new(className, props, parent)
     local object = Instance.new(className)
-
-    for property, value in pairs(properties or {}) do
-        pcall(function()
-            object[property] = value
-        end)
+    for key, value in pairs(props or {}) do
+        object[key] = value
     end
-
     object.Parent = parent
     return object
 end
 
-local function round(object, radius)
-    make("UICorner", {
+local function corner(object, radius)
+    new("UICorner", {
         CornerRadius = UDim.new(0, radius or 8)
     }, object)
 end
 
-local function stroke(object, color, thickness, transparency)
-    return make("UIStroke", {
+local function outline(object, color, thickness)
+    return new("UIStroke", {
         Color = color or CONFIG.Accent,
         Thickness = thickness or 1,
-        Transparency = transparency or 0,
     }, object)
 end
 
@@ -103,165 +72,143 @@ local function getCamera()
     return Workspace.CurrentCamera
 end
 
-local function getCharacterInfo(player)
+local function getInfo(player)
     local character = player.Character
-    if not character then
-        return nil
-    end
+    if not character then return end
 
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     local root = character:FindFirstChild("HumanoidRootPart")
     local head = character:FindFirstChild("Head")
 
-    if not humanoid or not root or not head then
-        return nil
-    end
-
-    if humanoid.Health <= 0 then
-        return nil
-    end
+    if not humanoid or not root or not head then return end
+    if humanoid.Health <= 0 then return end
 
     return character, humanoid, root, head
 end
 
-local function getRigName(humanoid)
-    if not humanoid then
-        return "Desconhecido"
-    end
-
-    if humanoid.RigType == Enum.HumanoidRigType.R6 then
-        return "R6"
-    elseif humanoid.RigType == Enum.HumanoidRigType.R15 then
-        return "R15"
-    end
-
-    return "Outro"
-end
-
-local function projectPosition(position)
+local function project(position)
     local camera = getCamera()
-    if not camera then
-        return nil, false
-    end
+    if not camera then return nil, false end
 
     local point, visible = camera:WorldToViewportPoint(position)
-
     return Vector2.new(point.X, point.Y), visible and point.Z > 0
 end
 
---// HIGHLIGHT CONTAINER
-highlightFolder = make("Folder", {
-    Name = "AESTH_ClientHighlights"
-}, Workspace)
+-- GUI principal
+local oldGui = playerGui:FindFirstChild("AESTH_HUB_ELITE")
+if oldGui then oldGui:Destroy() end
 
---// GUI
-local screenGui = make("ScreenGui", {
+local gui = new("ScreenGui", {
     Name = "AESTH_HUB_ELITE",
     ResetOnSpawn = false,
     IgnoreGuiInset = true,
     DisplayOrder = 50,
-    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-}, PlayerGui)
+}, playerGui)
 
-local main = make("Frame", {
+local main = new("Frame", {
     Name = "Main",
     Size = UDim2.fromOffset(330, 440),
     Position = UDim2.new(0.5, -165, 0.5, -220),
     BackgroundColor3 = CONFIG.Background,
     BorderSizePixel = 0,
     Active = true,
-}, screenGui)
+}, gui)
+corner(main, 12)
+outline(main, CONFIG.Accent, 1.5)
 
-round(main, 12)
-stroke(main, CONFIG.Accent, 1.4, 0.15)
-
-local header = make("Frame", {
-    Name = "Header",
-    Size = UDim2.new(1, 0, 0, 54),
+local header = new("Frame", {
+    Size = UDim2.new(1, 0, 0, 56),
     BackgroundColor3 = CONFIG.Panel,
     BorderSizePixel = 0,
-    Active = true,
 }, main)
+corner(header, 12)
 
-round(header, 12)
-
--- Cover the lower rounded corners of the header.
-make("Frame", {
+new("Frame", {
     Position = UDim2.new(0, 0, 1, -12),
     Size = UDim2.new(1, 0, 0, 12),
     BackgroundColor3 = CONFIG.Panel,
     BorderSizePixel = 0,
 }, header)
 
-local title = make("TextLabel", {
-    Name = "Title",
-    Position = UDim2.fromOffset(15, 4),
-    Size = UDim2.new(1, -95, 0, 27),
+local title = new("TextLabel", {
+    Position = UDim2.fromOffset(14, 5),
+    Size = UDim2.new(1, -75, 0, 28),
     BackgroundTransparency = 1,
     Text = "AESTH HUB",
     TextColor3 = CONFIG.Text,
-    Font = Enum.Font.GothamBold,
-    TextSize = 19,
+    Font = Enum.Font.GothamBlack,
+    TextSize = 20,
     TextXAlignment = Enum.TextXAlignment.Left,
     Active = true,
 }, header)
 
-local subtitle = make("TextLabel", {
-    Position = UDim2.fromOffset(16, 29),
-    Size = UDim2.new(1, -100, 0, 16),
+new("TextLabel", {
+    Position = UDim2.fromOffset(15, 31),
+    Size = UDim2.new(1, -80, 0, 16),
     BackgroundTransparency = 1,
-    Text = "ELITE  •  CLIENT VISUALS",
+    Text = "ELITE  •  VISUAL SYSTEM",
     TextColor3 = CONFIG.Accent,
     Font = Enum.Font.GothamMedium,
     TextSize = 9,
     TextXAlignment = Enum.TextXAlignment.Left,
 }, header)
 
-local minimizeButton = make("TextButton", {
-    Name = "Minimize",
-    Position = UDim2.new(1, -43, 0, 10),
+local minimize = new("TextButton", {
+    Position = UDim2.new(1, -43, 0, 12),
     Size = UDim2.fromOffset(30, 30),
-    BackgroundColor3 = Color3.fromRGB(45, 25, 31),
+    BackgroundColor3 = Color3.fromRGB(50, 25, 32),
     Text = "—",
     TextColor3 = CONFIG.Text,
     Font = Enum.Font.GothamBold,
     TextSize = 17,
-    AutoButtonColor = true,
 }, header)
+corner(minimize, 7)
 
-round(minimizeButton, 8)
+local orb = new("TextButton", {
+    Name = "AESTH_FloatingButton",
+    Size = UDim2.fromOffset(56, 56),
+    Position = UDim2.new(1, -75, 0.5, -28),
+    BackgroundColor3 = CONFIG.Background,
+    Text = "A",
+    TextColor3 = CONFIG.Accent,
+    Font = Enum.Font.GothamBlack,
+    TextSize = 26,
+    Visible = false,
+    AutoButtonColor = false,
+}, gui)
+corner(orb, 28)
+outline(orb, CONFIG.Accent, 2)
 
-local content = make("ScrollingFrame", {
-    Name = "Options",
-    Position = UDim2.fromOffset(12, 65),
-    Size = UDim2.new(1, -24, 1, -77),
+local options = new("ScrollingFrame", {
+    Position = UDim2.fromOffset(12, 66),
+    Size = UDim2.new(1, -24, 1, -78),
     BackgroundTransparency = 1,
     BorderSizePixel = 0,
     ScrollBarThickness = 4,
     ScrollBarImageColor3 = CONFIG.Accent,
-    CanvasSize = UDim2.fromOffset(0, 0),
     AutomaticCanvasSize = Enum.AutomaticSize.Y,
+    CanvasSize = UDim2.new(),
 }, main)
 
-make("UIListLayout", {
+new("UIListLayout", {
     Padding = UDim.new(0, 7),
     SortOrder = Enum.SortOrder.LayoutOrder,
-}, content)
+}, options)
 
-make("UIPadding", {
+new("UIPadding", {
     PaddingBottom = UDim.new(0, 8),
     PaddingRight = UDim.new(0, 4),
-}, content)
+}, options)
 
---// DRAGGING
-local function makeDraggable(target, handle, onRelease)
+-- Arrastar o menu ou botão
+local function draggable(target, handle, onClick)
     local dragging = false
     local moved = false
-    local startPosition
-    local startInputPosition
-    local activeInput
+    local startPos
+    local startInput
+    local activeTouch
 
-    addConnection(handle.InputBegan:Connect(function(input)
+    connect(handle.InputBegan, function(input)
         if input.UserInputType ~= Enum.UserInputType.MouseButton1
             and input.UserInputType ~= Enum.UserInputType.Touch then
             return
@@ -269,13 +216,16 @@ local function makeDraggable(target, handle, onRelease)
 
         dragging = true
         moved = false
-        activeInput = input
-        startInputPosition = input.Position
-        startPosition = target.Position
-    end))
+        activeTouch = input.UserInputType == Enum.UserInputType.Touch
+            and input or nil
+        startInput = input.Position
+        startPos = target.Position
+    end)
 
-    addConnection(UserInputService.InputChanged:Connect(function(input)
-        if not dragging then
+    connect(UIS.InputChanged, function(input)
+        if not dragging then return end
+        if activeTouch and input ~= activeTouch
+            and input.UserInputType == Enum.UserInputType.Touch then
             return
         end
 
@@ -284,130 +234,71 @@ local function makeDraggable(target, handle, onRelease)
             return
         end
 
-        if activeInput
-            and activeInput.UserInputType == Enum.UserInputType.Touch
-            and input ~= activeInput then
-            return
-        end
-
-        local delta = input.Position - startInputPosition
-
+        local delta = input.Position - startInput
         if math.abs(delta.X) > 4 or math.abs(delta.Y) > 4 then
             moved = true
         end
 
         if moved then
             target.Position = UDim2.new(
-                startPosition.X.Scale,
-                startPosition.X.Offset + delta.X,
-                startPosition.Y.Scale,
-                startPosition.Y.Offset + delta.Y
+                startPos.X.Scale, startPos.X.Offset + delta.X,
+                startPos.Y.Scale, startPos.Y.Offset + delta.Y
             )
         end
-    end))
+    end)
 
-    addConnection(UserInputService.InputEnded:Connect(function(input)
-        if not dragging then
-            return
-        end
+    connect(UIS.InputEnded, function(input)
+        local release = input.UserInputType == Enum.UserInputType.MouseButton1
+            or (activeTouch and input == activeTouch)
 
-        local isMouseRelease =
-            input.UserInputType == Enum.UserInputType.MouseButton1
-
-        local isTouchRelease =
-            input.UserInputType == Enum.UserInputType.Touch
-            and activeInput == input
-
-        if isMouseRelease or isTouchRelease then
+        if dragging and release then
             dragging = false
-            activeInput = nil
-
-            if onRelease then
-                onRelease(moved)
-            end
+            activeTouch = nil
+            if onClick then onClick(not moved) end
         end
-    end))
+    end)
 end
 
--- Drag only from the title area, not the minimize button.
-makeDraggable(main, title)
+draggable(main, title)
 
---// FLOATING ORB
-local orb = make("TextButton", {
-    Name = "FloatingOrb",
-    Size = UDim2.fromOffset(56, 56),
-    Position = UDim2.new(1, -78, 0.5, -28),
-    BackgroundColor3 = CONFIG.Background,
-    Text = "A",
-    TextColor3 = CONFIG.Accent,
-    Font = Enum.Font.GothamBlack,
-    TextSize = 26,
-    Visible = false,
-    AutoButtonColor = false,
-    Active = true,
-}, screenGui)
-
-round(orb, 28)
-stroke(orb, CONFIG.Accent, 2, 0)
-
-local orbPressStart
-local orbDragged = false
-
-makeDraggable(orb, orb, function(wasMoved)
-    orbDragged = wasMoved
-
-    if not wasMoved and orbPressStart then
+draggable(orb, orb, function(clicked)
+    if clicked then
         main.Visible = true
         orb.Visible = false
     end
-
-    orbPressStart = nil
 end)
 
-addConnection(orb.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch then
-        orbPressStart = true
-        orbDragged = false
-    end
-end))
-
-addConnection(minimizeButton.Activated:Connect(function()
+connect(minimize.Activated, function()
     main.Visible = false
     orb.Visible = true
-end))
+end)
 
---// OPTION CONTROLS
-local optionButtons = {}
-
-local function createSection(text)
-    local label = make("TextLabel", {
-        Size = UDim2.new(1, -2, 0, 24),
+-- Opções do menu
+local function section(text)
+    new("TextLabel", {
+        Size = UDim2.new(1, -2, 0, 23),
         BackgroundTransparency = 1,
         Text = string.upper(text),
         TextColor3 = CONFIG.Accent,
         Font = Enum.Font.GothamBold,
         TextSize = 11,
         TextXAlignment = Enum.TextXAlignment.Left,
-    }, content)
-
-    return label
+    }, options)
 end
 
-local function createToggle(key, labelText)
-    local button = make("TextButton", {
+local function toggle(key, labelText)
+    local button = new("TextButton", {
         Size = UDim2.new(1, -2, 0, 38),
         BackgroundColor3 = CONFIG.Panel,
         BorderSizePixel = 0,
         Text = "",
         AutoButtonColor = false,
-    }, content)
+    }, options)
+    corner(button, 8)
 
-    round(button, 8)
-
-    local label = make("TextLabel", {
+    new("TextLabel", {
         Position = UDim2.fromOffset(12, 0),
-        Size = UDim2.new(1, -66, 1, 0),
+        Size = UDim2.new(1, -60, 1, 0),
         BackgroundTransparency = 1,
         Text = labelText,
         TextColor3 = CONFIG.Text,
@@ -416,239 +307,86 @@ local function createToggle(key, labelText)
         TextXAlignment = Enum.TextXAlignment.Left,
     }, button)
 
-    local indicator = make("Frame", {
-        Position = UDim2.new(1, -43, 0.5, -9),
-        Size = UDim2.fromOffset(32, 18),
+    local indicator = new("TextLabel", {
+        Position = UDim2.new(1, -48, 0.5, -10),
+        Size = UDim2.fromOffset(36, 20),
         BackgroundColor3 = Color3.fromRGB(65, 65, 73),
-        BorderSizePixel = 0,
+        Text = "OFF",
+        TextColor3 = CONFIG.Text,
+        Font = Enum.Font.GothamBold,
+        TextSize = 9,
     }, button)
-
-    round(indicator, 12)
-
-    local knob = make("Frame", {
-        Position = UDim2.fromOffset(3, 3),
-        Size = UDim2.fromOffset(12, 12),
-        BackgroundColor3 = Color3.fromRGB(235, 235, 235),
-        BorderSizePixel = 0,
-    }, indicator)
-
-    round(knob, 12)
+    corner(indicator, 6)
 
     local function refresh()
-        local enabled = SETTINGS[key]
-
-        indicator.BackgroundColor3 = enabled
-            and CONFIG.Accent
-            or Color3.fromRGB(65, 65, 73)
-
-        knob.Position = enabled
-            and UDim2.new(1, -15, 0, 3)
-            or UDim2.fromOffset(3, 3)
-
-        button.BackgroundColor3 = enabled
-            and Color3.fromRGB(38, 22, 28)
-            or CONFIG.Panel
+        indicator.Text = settings[key] and "ON" or "OFF"
+        indicator.BackgroundColor3 = settings[key]
+            and CONFIG.Accent or Color3.fromRGB(65, 65, 73)
+        button.BackgroundColor3 = settings[key]
+            and Color3.fromRGB(39, 22, 29) or CONFIG.Panel
     end
 
-    addConnection(button.Activated:Connect(function()
-        SETTINGS[key] = not SETTINGS[key]
+    connect(button.Activated, function()
+        settings[key] = not settings[key]
         refresh()
-    end))
+    end)
 
-    optionButtons[key] = refresh
     refresh()
 end
 
-createSection("Visuals")
-createToggle("ESP", "Ativar ESP")
-createToggle("Box", "Caixa do personagem")
-createToggle("Names", "Nome do jogador")
-createToggle("Distance", "Distância")
-createToggle("Tracers", "Linhas até jogadores")
-createToggle("Skeleton", "Esqueleto R6 / R15")
-createToggle("Highlight", "Highlight do personagem")
+section("Visuals")
+toggle("ESP", "Ativar ESP")
+toggle("Box", "Caixa do personagem")
+toggle("Names", "Nome do jogador")
+toggle("Distance", "Distância")
+toggle("Tracers", "Linhas até jogadores")
+toggle("Skeleton", "Esqueleto R6 / R15")
+toggle("Highlight", "Highlight")
 
-createSection("Humanoid")
-createToggle("Health", "Vida do Humanoid")
-createToggle("RigInfo", "Mostrar tipo de rig (R6/R15)")
+section("Humanoid")
+toggle("Health", "Barra de vida")
+toggle("RigInfo", "Tipo de rig R6 / R15")
 
-createSection("Extras")
-createToggle("FOV", "Círculo visual de FOV")
+section("Extras")
+toggle("FOV", "Círculo visual FOV")
 
-local footer = make("TextLabel", {
-    Size = UDim2.new(1, -2, 0, 30),
+new("TextLabel", {
+    Size = UDim2.new(1, -2, 0, 25),
     BackgroundTransparency = 1,
-    Text = "AESTH  •  VISUAL MODE",
+    Text = "AESTH • CLIENT VISUALS",
     TextColor3 = CONFIG.Muted,
     Font = Enum.Font.Gotham,
     TextSize = 9,
-}, content)
+}, options)
 
---// FOV CIRCLE
-local fovCircle = make("Frame", {
+-- Círculo de FOV
+local fov = new("Frame", {
     Name = "FOVCircle",
     AnchorPoint = Vector2.new(0.5, 0.5),
-    Position = UDim2.new(0.5, 0, 0.5, 0),
     Size = UDim2.fromOffset(CONFIG.FOVRadius * 2, CONFIG.FOVRadius * 2),
     BackgroundTransparency = 1,
     Visible = false,
-}, screenGui)
+}, gui)
+corner(fov, 999)
+outline(fov, CONFIG.Accent, 1.5)
 
-round(fovCircle, 999)
-stroke(fovCircle, CONFIG.Accent, 1.5, 0.12)
+-- ESP
+local highlightFolder = new("Folder", {
+    Name = "AESTH_Highlights"
+}, Workspace)
 
---// OVERLAY OBJECTS
-local function makeOverlay(player)
-    local folder = make("Folder", {
-        Name = "Player_" .. tostring(player.UserId)
-    }, screenGui)
+local R6_PAIRS = {
+    {"Head", "Torso"},
+    {"Torso", "HumanoidRootPart"},
+    {"Torso", "Left Arm"},
+    {"Torso", "Right Arm"},
+    {"Torso", "Left Leg"},
+    {"Torso", "Right Leg"},
+}
 
-    local box = make("Frame", {
-        Name = "Box",
-        BackgroundTransparency = 1,
-        BorderSizePixel = 0,
-        Visible = false,
-    }, folder)
-
-    stroke(box, CONFIG.Enemy, 1.5, 0)
-
-    local tracer = make("Frame", {
-        Name = "Tracer",
-        AnchorPoint = Vector2.new(0, 0.5),
-        BackgroundColor3 = CONFIG.Enemy,
-        BorderSizePixel = 0,
-        Visible = false,
-    }, folder)
-
-    local nameLabel = make("TextLabel", {
-        Name = "Name",
-        BackgroundTransparency = 1,
-        TextColor3 = CONFIG.Text,
-        TextStrokeTransparency = 0.35,
-        Font = Enum.Font.GothamBold,
-        TextSize = 12,
-        Visible = false,
-    }, folder)
-
-    local infoLabel = make("TextLabel", {
-        Name = "Info",
-        BackgroundTransparency = 1,
-        TextColor3 = CONFIG.Muted,
-        TextStrokeTransparency = 0.35,
-        Font = Enum.Font.GothamMedium,
-        TextSize = 10,
-        Visible = false,
-    }, folder)
-
-    local healthBack = make("Frame", {
-        Name = "HealthBack",
-        BackgroundColor3 = Color3.fromRGB(35, 35, 35),
-        BorderSizePixel = 0,
-        Visible = false,
-    }, folder)
-
-    local healthFill = make("Frame", {
-        Name = "HealthFill",
-        BackgroundColor3 = Color3.fromRGB(80, 220, 120),
-        BorderSizePixel = 0,
-        Visible = false,
-    }, healthBack)
-
-    local skeleton = {}
-
-    local function makeBone()
-        return make("Frame", {
-            Name = "Bone",
-            AnchorPoint = Vector2.new(0, 0.5),
-            BackgroundColor3 = CONFIG.Enemy,
-            BorderSizePixel = 0,
-            Visible = false,
-        }, folder)
-    end
-
-    for i = 1, 18 do
-        skeleton[i] = makeBone()
-    end
-
-    local highlight = make("Highlight", {
-        Name = "Highlight",
-        Enabled = false,
-        FillColor = CONFIG.Enemy,
-        OutlineColor = CONFIG.Accent,
-        FillTransparency = 0.82,
-        OutlineTransparency = 0.12,
-        DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
-    }, highlightFolder)
-
-    overlays[player] = {
-        Folder = folder,
-        Box = box,
-        Tracer = tracer,
-        Name = nameLabel,
-        Info = infoLabel,
-        HealthBack = healthBack,
-        HealthFill = healthFill,
-        Skeleton = skeleton,
-        Highlight = highlight,
-    }
-
-    return overlays[player]
-end
-
-local function hideOverlay(data)
-    if not data then
-        return
-    end
-
-    data.Box.Visible = false
-    data.Tracer.Visible = false
-    data.Name.Visible = false
-    data.Info.Visible = false
-    data.HealthBack.Visible = false
-    data.HealthFill.Visible = false
-
-    for _, bone in ipairs(data.Skeleton) do
-        bone.Visible = false
-    end
-
-    data.Highlight.Enabled = false
-    data.Highlight.Adornee = nil
-end
-
-local function removeOverlay(player)
-    local data = overlays[player]
-    if not data then
-        return
-    end
-
-    pcall(function()
-        data.Folder:Destroy()
-        data.Highlight:Destroy()
-    end)
-
-    overlays[player] = nil
-end
-
-local function drawSegment(frame, a, b)
-    local delta = b - a
-    local length = delta.Magnitude
-
-    if length < 1 then
-        frame.Visible = false
-        return
-    end
-
-    frame.Position = UDim2.fromOffset(a.X, a.Y)
-    frame.Size = UDim2.fromOffset(length, 1.5)
-    frame.Rotation = math.deg(math.atan2(delta.Y, delta.X))
-    frame.Visible = true
-end
-
---// R6 / R15 SKELETON
-local RIG_PAIRS = {
+local R15_PAIRS = {
     {"Head", "UpperTorso"},
     {"UpperTorso", "LowerTorso"},
-    {"LowerTorso", "HumanoidRootPart"},
     {"UpperTorso", "LeftUpperArm"},
     {"LeftUpperArm", "LeftLowerArm"},
     {"LeftLowerArm", "LeftHand"},
@@ -663,92 +401,256 @@ local RIG_PAIRS = {
     {"RightLowerLeg", "RightFoot"},
 }
 
-local R6_PAIRS = {
-    {"Head", "Torso"},
-    {"Torso", "HumanoidRootPart"},
-    {"Torso", "Left Arm"},
-    {"Torso", "Right Arm"},
-    {"Torso", "Left Leg"},
-    {"Torso", "Right Leg"},
-}
+local function createOverlay(player)
+    local folder = new("Folder", {
+        Name = "ESP_" .. player.UserId
+    }, gui)
 
-local function drawSkeleton(data, character, humanoid)
-    for _, bone in ipairs(data.Skeleton) do
+    local box = new("Frame", {
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        Visible = false,
+    }, folder)
+    outline(box, CONFIG.Accent, 1.5)
+
+    local tracer = new("Frame", {
+        AnchorPoint = Vector2.new(0, 0.5),
+        BackgroundColor3 = CONFIG.Accent,
+        BorderSizePixel = 0,
+        Visible = false,
+    }, folder)
+
+    local name = new("TextLabel", {
+        BackgroundTransparency = 1,
+        TextColor3 = CONFIG.Text,
+        TextStrokeTransparency = 0.3,
+        Font = Enum.Font.GothamBold,
+        TextSize = 12,
+        Visible = false,
+    }, folder)
+
+    local info = new("TextLabel", {
+        BackgroundTransparency = 1,
+        TextColor3 = CONFIG.Muted,
+        TextStrokeTransparency = 0.3,
+        Font = Enum.Font.GothamMedium,
+        TextSize = 10,
+        Visible = false,
+    }, folder)
+
+    local healthBack = new("Frame", {
+        BackgroundColor3 = Color3.fromRGB(35, 35, 35),
+        BorderSizePixel = 0,
+        Visible = false,
+    }, folder)
+
+    local healthFill = new("Frame", {
+        BackgroundColor3 = Color3.fromRGB(80, 220, 120),
+        BorderSizePixel = 0,
+    }, healthBack)
+
+    local bones = {}
+    for i = 1, 15 do
+        bones[i] = new("Frame", {
+            AnchorPoint = Vector2.new(0, 0.5),
+            BackgroundColor3 = CONFIG.Accent,
+            BorderSizePixel = 0,
+            Visible = false,
+        }, folder)
+    end
+
+    local highlight = new("Highlight", {
+        Enabled = false,
+        FillColor = CONFIG.Accent,
+        OutlineColor = CONFIG.Accent,
+        FillTransparency = 0.82,
+        OutlineTransparency = 0.1,
+        DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
+    }, highlightFolder)
+
+    local data = {
+        Folder = folder,
+        Box = box,
+        Tracer = tracer,
+        Name = name,
+        Info = info,
+        HealthBack = healthBack,
+        HealthFill = healthFill,
+        Bones = bones,
+        Highlight = highlight,
+    }
+
+    overlays[player] = data
+    return data
+end
+
+local function hide(data)
+    if not data then return end
+
+    data.Box.Visible = false
+    data.Tracer.Visible = false
+    data.Name.Visible = false
+    data.Info.Visible = false
+    data.HealthBack.Visible = false
+    data.HealthFill.Visible = false
+
+    for _, bone in ipairs(data.Bones) do
         bone.Visible = false
     end
 
-    if not SETTINGS.ESP or not SETTINGS.Skeleton then
+    data.Highlight.Enabled = false
+    data.Highlight.Adornee = nil
+end
+
+local function removePlayer(player)
+    local data = overlays[player]
+    if not data then return end
+
+    pcall(function() data.Folder:Destroy() end)
+    pcall(function() data.Highlight:Destroy() end)
+    overlays[player] = nil
+end
+
+local function segment(frame, a, b)
+    local delta = b - a
+    local length = delta.Magnitude
+    if length < 1 then
+        frame.Visible = false
         return
     end
 
-    local pairsToDraw = humanoid.RigType == Enum.HumanoidRigType.R6
-        and R6_PAIRS
-        or RIG_PAIRS
+    frame.Position = UDim2.fromOffset(a.X, a.Y)
+    frame.Size = UDim2.fromOffset(length, 1.5)
+    frame.Rotation = math.deg(math.atan2(delta.Y, delta.X))
+    frame.Visible = true
+end
 
-    local boneIndex = 0
+local function drawBones(data, character, humanoid)
+    for _, bone in ipairs(data.Bones) do
+        bone.Visible = false
+    end
 
-    for _, pair in ipairs(pairsToDraw) do
-        local partA = character:FindFirstChild(pair[1])
-        local partB = character:FindFirstChild(pair[2])
+    if not settings.ESP or not settings.Skeleton then return end
 
-        if partA and partB
-            and partA:IsA("BasePart")
-            and partB:IsA("BasePart") then
+    local pairsList = humanoid.RigType == Enum.HumanoidRigType.R6
+        and R6_PAIRS or R15_PAIRS
 
-            local a, visibleA = projectPosition(partA.Position)
-            local b, visibleB = projectPosition(partB.Position)
+    for index, pair in ipairs(pairsList) do
+        local aPart = character:FindFirstChild(pair[1])
+        local bPart = character:FindFirstChild(pair[2])
 
-            boneIndex += 1
+        if aPart and bPart
+            and aPart:IsA("BasePart")
+            and bPart:IsA("BasePart") then
 
-            if a and b and visibleA and visibleB
-                and data.Skeleton[boneIndex] then
-                drawSegment(data.Skeleton[boneIndex], a, b)
+            local a, av = project(aPart.Position)
+            local b, bv = project(bPart.Position)
+
+            if a and b and av and bv then
+                segment(data.Bones[index], a, b)
             end
         end
     end
 end
 
---// PLAYER UPDATE
 local function updatePlayer(player)
-    local data = overlays[player] or makeOverlay(player)
+    local data = overlays[player] or createOverlay(player)
 
-    if not SETTINGS.ESP and not SETTINGS.Highlight then
-        hideOverlay(data)
+    if not settings.ESP and not settings.Highlight then
+        hide(data)
         return
     end
 
-    local character, humanoid, root, head = getCharacterInfo(player)
-
-    if not character then
-        hideOverlay(data)
-        return
-    end
-
+    local character, humanoid, root, head = getInfo(player)
     local camera = getCamera()
-    if not camera then
-        hideOverlay(data)
+
+    if not character or not camera then
+        hide(data)
         return
     end
 
-    local localCharacter = LocalPlayer.Character
+    local localCharacter = localPlayer.Character
     local localRoot = localCharacter
         and localCharacter:FindFirstChild("HumanoidRootPart")
 
     local distance = localRoot
-        and (root.Position - localRoot.Position).Magnitude
-        or 0
+        and (root.Position - localRoot.Position).Magnitude or 0
 
-    local shouldDraw = SETTINGS.ESP and distance <= CONFIG.MaxDistance
+    local rootPoint, rootVisible = project(root.Position)
+    local headPoint, headVisible = project(head.Position + Vector3.new(0, 0.5, 0))
 
-    local rootPoint, rootVisible = projectPosition(root.Position)
-    local headPoint, headVisible = projectPosition(
-        head.Position + Vector3.new(0, 0.5, 0)
-    )
-
-    local onScreen = rootVisible and headVisible
+    local visible = settings.ESP
+        and distance <= CONFIG.MaxDistance
+        and rootVisible and headVisible
         and rootPoint ~= nil and headPoint ~= nil
 
-    if not shouldDraw or not onScreen then
+    if visible then
+        local height = math.max(12, math.abs(rootPoint.Y - headPoint.Y) * 2.1)
+        local width = math.max(8, height * 0.48)
+        local x = rootPoint.X - width / 2
+        local y = headPoint.Y
+
+        data.Box.Visible = settings.Box
+        if settings.Box then
+            data.Box.Position = UDim2.fromOffset(x, y)
+            data.Box.Size = UDim2.fromOffset(width, height)
+        end
+
+        data.Name.Visible = settings.Names
+        if settings.Names then
+            data.Name.Position = UDim2.fromOffset(x - 50, y - 20)
+            data.Name.Size = UDim2.fromOffset(width + 100, 18)
+            data.Name.Text = player.DisplayName
+        end
+
+        data.Tracer.Visible = settings.Tracers
+        if settings.Tracers then
+            local viewport = camera.ViewportSize
+            segment(
+                data.Tracer,
+                Vector2.new(viewport.X / 2, viewport.Y),
+                rootPoint
+            )
+        end
+
+        local textParts = {}
+
+        if settings.Distance then
+            table.insert(textParts, tostring(math.floor(distance)) .. " studs")
+        end
+
+        if settings.RigInfo then
+            table.insert(textParts, humanoid.RigType.Name)
+        end
+
+        data.Info.Visible = #textParts > 0
+        data.Info.Text = table.concat(textParts, " • ")
+        data.Info.Position = UDim2.fromOffset(x - 40, y + height + 2)
+        data.Info.Size = UDim2.fromOffset(width + 80, 16)
+
+        data.HealthBack.Visible = settings.Health
+        if settings.Health then
+            data.HealthBack.Position = UDim2.fromOffset(x - 6, y)
+            data.HealthBack.Size = UDim2.fromOffset(3, height)
+
+            local ratio = humanoid.MaxHealth > 0
+                and math.clamp(humanoid.Health / humanoid.MaxHealth, 0, 1)
+                or 0
+
+            data.HealthFill.Size = UDim2.new(1, 0, ratio, 0)
+            data.HealthFill.Position = UDim2.new(0, 0, 1, 0)
+            data.HealthFill.AnchorPoint = Vector2.new(0, 1)
+            data.HealthFill.BackgroundColor3 = Color3.fromRGB(
+                math.floor(255 * (1 - ratio)),
+                math.floor(220 * ratio),
+                65
+            )
+        else
+            data.HealthFill.Visible = false
+        end
+
+        drawBones(data, character, humanoid)
+    else
         data.Box.Visible = false
         data.Tracer.Visible = false
         data.Name.Visible = false
@@ -756,24 +658,78 @@ local function updatePlayer(player)
         data.HealthBack.Visible = false
         data.HealthFill.Visible = false
 
-        for _, bone in ipairs(data.Skeleton) do
+        for _, bone in ipairs(data.Bones) do
             bone.Visible = false
         end
-    else
-        local height = math.max(12, math.abs(rootPoint.Y - headPoint.Y) * 2.1)
-        local width = math.max(8, height * 0.48)
-        local boxX = rootPoint.X - width / 2
-        local boxY = headPoint.Y
+    end
 
-        data.Box.Visible = SETTINGS.Box
+    data.Highlight.Enabled = settings.Highlight
+    data.Highlight.Adornee = settings.Highlight and character or nil
+end
 
-        if SETTINGS.Box then
-            data.Box.Position = UDim2.fromOffset(boxX, boxY)
-            data.Box.Size = UDim2.fromOffset(width, height)
+local function register(player)
+    if player == localPlayer then return end
+
+    if not overlays[player] then
+        createOverlay(player)
+    end
+
+    connect(player.CharacterRemoving, function()
+        hide(overlays[player])
+    end)
+end
+
+for _, player in ipairs(Players:GetPlayers()) do
+    register(player)
+end
+
+connect(Players.PlayerAdded, register)
+connect(Players.PlayerRemoving, removePlayer)
+
+local lastUpdate = 0
+
+connect(RunService.RenderStepped, function()
+    if not alive then return end
+
+    local camera = getCamera()
+
+    fov.Visible = settings.FOV and camera ~= nil
+    if settings.FOV and camera then
+        fov.Position = UDim2.fromOffset(
+            camera.ViewportSize.X / 2,
+            camera.ViewportSize.Y / 2
+        )
+    end
+
+    if os.clock() - lastUpdate < 0.05 then return end
+    lastUpdate = os.clock()
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= localPlayer then
+            local success, err = pcall(updatePlayer, player)
+            if not success then
+                warn("[AESTH HUB] Erro em " .. player.Name .. ": " .. tostring(err))
+                hide(overlays[player])
+            end
         end
+    end
+end)
 
-        data.Name.Visible = SETTINGS.Names
+connect(script.Destroying, function()
+    alive = false
 
-        if SETTINGS.Names then
-            data.Name.Position = UDim2.fromOffset(boxX - 40, boxY - 20)
-            data.Name.Size = UDim2.fromOffset(wid
+    for _, connection in ipairs(connections) do
+        pcall(function()
+            connection:Disconnect()
+        end)
+    end
+
+    for player in pairs(overlays) do
+        removePlayer(player)
+    end
+
+    pcall(function() highlightFolder:Destroy() end)
+    pcall(function() gui:Destroy() end)
+end)
+
+print("[AESTH HUB ELITE] Inicializado.")
